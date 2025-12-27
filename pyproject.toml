@@ -1,0 +1,11 @@
+[project]
+name = "columbia-dsi-faculty-scraper"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "rich>=14.2.0",
+    "scrapy>=2.13.4",
+    "selenium>=4.39.0",
+]

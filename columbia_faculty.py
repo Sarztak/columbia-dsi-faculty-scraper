@@ -1,71 +1,99 @@
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from scrapy import Selector
-import time
+from rich.traceback import install; install()
+import json 
 import logging
+from pathlib import Path
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC 
 
+START_URL = "https://datascience.columbia.edu/people-type/faculty/" 
+NEXT_BTN  = "//a[contains(@class,'next')]"
+CARDS     = "//a[contains(@class,'group')]"
+FIELDS = {
+    "name":  "//h1[contains(@class,'font-bold')]",
+    "dept":  "//dl[contains(@class,'mt-8')]",           # element, then .text
+    "links": "//div[contains(@class,'border-t')]//a",   # elements, then .get_attribute('href')
+    "info":  "//div[contains(@class,'gutenberg-editor')]//p"
+}
+OUT_FILE  = "dsi_faculty.json"
 
-def get_browser():
-    '''
-    Function to start the browser in headless mode
-    '''
-    logging.info("Opening connection...") 
-    driver_path = r".\chromedriver.exe"
-    try:
-        service = Service(driver_path)
-        option = webdriver.ChromeOptions()
-        option.add_argument("--headless=new")
-    except Exception as e:
-        logging.info('e')
-    
-    return webdriver.Chrome(service=service, options=option)
+def wait(sel, xpath, timeout=5):
+    return WebDriverWait(sel, timeout).until(
+        EC.presence_of_element_located((By.XPATH, xpath))
+    )
 
-   
-def get_info(browser, url):
-    browser.get(url)
-    time.sleep(5)
-    new_selector = Selector(text=browser.page_source)
-    with open('DSI Faculty.txt', "w", encoding="utf-8") as w:
-        while next_page:=new_selector.xpath("//div[@class='pagination text-center']/a[@class='next page-numbers']/@href").get():
-            for faculty in new_selector.xpath("//a[@class='inline-block group']/@href").getall():
-                browser.get(faculty)
-                time.sleep(5)
-                info_selector = Selector(text=browser.page_source)
-                
-                # name of the faculty member
-                name = info_selector.xpath("//h1[@class='font-bold type-preset-2']/text()").get() 
-                
-                # department of the faculty member
-                dept = info_selector.xpath("//dl[@class='mt-8']//text()").getall()
+def wait_nxt_page(driver, nxt, timeout=5):
+    return WebDriverWait(driver, timeout).until(EC.staleness_of(nxt))
 
-                # link to personal page
-                links = info_selector.xpath("//div[@class='border-t border-slate-100 text-blue-400']//a/@href").getall()
+def extract_one(driver, url):
+    driver.get(url)
+    wait(driver, FIELDS["name"])
+    record = {}
+    for key, xpath in FIELDS.items():
+        try:
+            if key == "links":
+                # store the list of all links on the page
+                record[key] = [
+                    a.get_attribute("href") for a in driver.find_elements(By.XPATH, xpath)]
+            elif key in ("name", "dept", "info"):
+                # store other field as string
+                el = driver.find_element(By.XPATH, xpath)
+                record[key] = el.text
+        except Exception as e:
+            if key == "links":
+                record[key] = {}
+            elif key in ("name", "dept", "info"):
+                record[key] = ""
+            print(e)
+    return record
 
-                # info to personal page
-                info = info_selector.xpath("//div[@class='gutenberg-editor']/p/text()").getall() 
+def get_driver(binary_location=None, headless=True):
+    options = webdriver.ChromeOptions()
+    if headless:
+        options.add_argument("--headless")
 
+    # if binary is not provided, selenium will use the chrome binary in the 
+    # standard install path
+    if binary_location:
+        options.binary_location = binary_location
 
-                w.write(f'{name}\n')
-                for line in dept:
-                    w.write(f"{line.strip()}\n")
-                for link in links:
-                    w.write(f'\n{link}')
-                w.write('\n\n')
-                for i in info:
-                    w.write(f"{i}")
-                w.write('\n\n\n==============================================================================================================================================\n\n\n')
-            browser.get(next_page)
-            time.sleep(5)
-            print(next_page)
-            break
-            new_selector = Selector(text=browser.page_source)
+    driver = webdriver.Chrome(options=options) 
+
+    return driver
 
 
 def main():
-    logging.info("Start")
-    browser = get_browser()
-    url = "https://datascience.columbia.edu/people-type/faculty/" 
-    get_info(browser, url)
+    # fetch the headless browser
+    driver = get_driver(headless=True)
+
+    # retrive the information and dump to txt file
+    # get_info(browser, URL)
+
+    data, page = [], 1
+    driver.get(START_URL)
+    while True:
+        print(f"[page {page}]")
+        wait(driver, CARDS) 
+        cards = driver.find_elements(By.XPATH, CARDS)
+        hrefs = [c.get_attribute("href") for c in cards] 
+
+        current_page_url = driver.current_url
+        for url in hrefs:
+            data.append(extract_one(driver, url))
+
+        driver.get(current_page_url) 
+        try:
+            nxt = driver.find_element(By.XPATH, NEXT_BTN)
+            nxt.click()
+            wait_nxt_page(driver, nxt) # wait for next page to load
+            page += 1
+        except Exception:
+            break
+
+    Path(OUT_FILE).write_text(json.dumps(data, indent=2, ensure_ascii=False))
+    print(f"saved {len(data)} records -> {OUT_FILE}")
+    driver.quit()
 
 if __name__ == "__main__":
     logging.basicConfig(level='DEBUG')
