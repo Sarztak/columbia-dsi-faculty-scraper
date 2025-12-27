@@ -54,5 +54,3 @@ The search logic was simple and crude, but it was enough to get usable signal wi
 This project exists because scraping and building a workaround was genuinely more enjoyable than the application process itself.
 
 It reflects a recurring pattern: when faced with an unstructured, tedious task, I tend to reach for code first—not because it’s optimal, but because it’s engaging. This scraper is less about the output and more about the instinct to turn friction into something programmable.
-
-If anyone finds it useful, that’s a bonus.
